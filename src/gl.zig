@@ -127,17 +127,27 @@ pub const Program = struct {
             return error.CompilationFailed;
         }
     }
+
+    // pub fn setAttr() !void {}
 };
 
 pub const Shader = struct {
     idx: Idx,
+    name: []const u8,
     T: Type,
 
-    pub const Type = enum(c_int) {
-        vertex = c.GL_VERTEX_SHADER,
-        fragment = c.GL_FRAGMENT_SHADER,
+    pub const Type = union(enum) {
+        vertex,
+        fragment,
 
-        pub fn string(this: @This()) []const u8 {
+        fn c_enum(this: @This()) c_int {
+            return switch (this) {
+                .vertex => c.GL_VERTEX_SHADER,
+                .fragment => c.GL_FRAGMENT_SHADER,
+            };
+        }
+
+        fn string(this: @This()) []const u8 {
             return switch (this) {
                 .vertex => "VERTEX",
                 .fragment => "FRAGMENT",
@@ -145,21 +155,29 @@ pub const Shader = struct {
         }
     };
 
-    pub fn init(comptime T: Type, name: []const u8, io: std.Io, allocator: Allocator) !@This() {
-        const path = try std.fmt.allocPrint(allocator, "res/shaders/{s}." ++ if (T == .vertex) "vert" else "frag", .{name});
+    pub fn init(name: []const u8, T: Type) @This() {
+        const idx = c.glCreateShader(T.c_enum());
+
+        return @This(){
+            .idx = idx,
+            .name = name,
+            .T = T,
+        };
+    }
+
+    pub fn compile(this: @This(), io: std.Io, allocator: Allocator) !void {
+        const postfix = switch (this.T) {
+            .vertex => "vert",
+            .fragment => "frag",
+        };
+        const path = try std.fmt.allocPrint(allocator, "res/shaders/{s}.{s}", .{ this.name, postfix });
         defer allocator.free(path);
         const code = try os.readShaderFile(path, io, allocator);
         defer allocator.free(code);
 
-        const idx = c.glCreateShader(@intFromEnum(T));
-        c.glShaderSource(idx, 1, &code.ptr, null);
-        c.glCompileShader(idx);
-
-        const this = @This(){ .idx = idx, .T = T };
-
+        c.glShaderSource(this.idx, 1, &code.ptr, null);
+        c.glCompileShader(this.idx);
         try checkCompileStatus(this);
-
-        return this;
     }
 
     fn checkCompileStatus(this: @This()) error{CompilationFailed}!void {
@@ -173,4 +191,16 @@ pub const Shader = struct {
             return error.CompilationFailed;
         }
     }
+
+    pub fn delete(this: @This()) void {
+        c.glDeleteShader(this.idx);
+    }
+};
+
+pub const GLSL = struct {
+    pub const Types = enum {
+        vec2,
+        vec3,
+        mat4,
+    };
 };

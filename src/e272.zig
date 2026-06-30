@@ -22,19 +22,7 @@ const window_height = 1080;
 const tile_width = window_width / 240 * 16;
 const tile_height = window_height / 160 * 16;
 
-// GLFW callback functions
-
-fn checkProgramLinkStatus(program: c_uint) void {
-    var success: c_int = 0;
-    var infoLog: [512]u8 = undefined;
-    c.glGetProgramiv(program, c.GL_LINK_STATUS, &success);
-    if (success == 0) {
-        c.glGetProgramInfoLog(program, 512, null, &infoLog);
-        _ = c.printf("ERROR::PROGRAM::LINKING_FAILED\n%s\n", &infoLog);
-    }
-}
-
-var shaderProgram: c_uint = 0;
+// var shaderProgram: c_uint = 0;
 var VAO: c_uint = 0;
 var VBO: c_uint = 0;
 var EBO: c_uint = 0;
@@ -66,9 +54,6 @@ fn initDrawResources() !void {
     c.glBindBuffer(c.GL_ARRAY_BUFFER, VBO);
     c.glBufferData(c.GL_ARRAY_BUFFER, @sizeOf(@TypeOf(vertices)), &vertices, c.GL_DYNAMIC_DRAW);
 
-    // c.glBindBuffer(c.GL_ELEMENT_ARRAY_BUFFER, EBO);
-    // c.glBufferData(c.GL_ELEMENT_ARRAY_BUFFER, @sizeOf(@TypeOf(indices)), &indices, c.GL_DYNAMIC_DRAW);
-
     // Position attribute
     c.glVertexAttribPointer(0, 2, c.GL_FLOAT, c.GL_FALSE, 4 * @sizeOf(f32), @ptrFromInt(0));
     c.glEnableVertexAttribArray(0);
@@ -81,16 +66,10 @@ fn initDrawResources() !void {
     c.glBindVertexArray(0);
 }
 
-fn setupOrthographicProjection() void {
-    // var projection: [4][4]f32 align(16) = undefined;
-    // const proj_mat: *c.mat4 = @ptrCast(@alignCast(&projection));
-    //
-    // // Match your window dimensions (1920x1080) and include depth range
-    // c.glm_ortho(0.0, @as(f32, @floatFromInt(window_width)), @as(f32, @floatFromInt(window_height)), 0.0, -1.0, 1.0, proj_mat);
-
+fn setupOrthographicProjection(prog: gl.Program) void {
     var projection = gl.Projection.GBA();
 
-    const projectionLoc = c.glGetUniformLocation(shaderProgram, "projection");
+    const projectionLoc = c.glGetUniformLocation(prog.idx, "projection");
     c.glUniformMatrix4fv(projectionLoc, 1, c.GL_FALSE, @ptrCast(&projection.data));
 }
 
@@ -98,8 +77,8 @@ fn setupOrthographicProjection() void {
 // gl_Position = projection * transform * vec4(aPos, 1.0);
 // And you can use pixel coordinates directly in your draw function:
 
-fn drawWithProjection(texture: c_uint, x: f32, y: f32, width: f32, height: f32) void {
-    c.glUseProgram(shaderProgram); // Make sure program is active
+fn drawWithProjection(prog: gl.Program, texture: c_uint, x: f32, y: f32, width: f32, height: f32) void {
+    c.glUseProgram(prog.idx); // Make sure program is active
     c.glActiveTexture(c.GL_TEXTURE0);
     c.glBindTexture(c.GL_TEXTURE_2D, texture);
 
@@ -117,7 +96,7 @@ fn drawWithProjection(texture: c_uint, x: f32, y: f32, width: f32, height: f32) 
 }
 
 pub fn init() os.Window {
-    const window = os.Window.init(240, 160) catch unreachable;
+    const window = os.Window.init(1920, 1080) catch unreachable;
     gl.init() catch unreachable;
 
     return window;
@@ -131,21 +110,29 @@ pub fn run(io: std.Io, allocator: Allocator) !void {
     const window = init();
     defer deinit(window);
 
-    const vertex_shader = try gl.Shader.init(.vertex, "static", io, allocator);
-    const fragment_shader = try gl.Shader.init(.fragment, "static", io, allocator);
+    // const vertex_shader = try gl.Shader.init(.vertex, "static", io, allocator);
+    // const fragment_shader = try gl.Shader.init(.fragment, "static", io, allocator);
+
+    const vertex_shader = gl.Shader.init("static", .vertex);
+    vertex_shader.compile(io, allocator) catch unreachable;
+    const fragment_shader = gl.Shader.init("static", .fragment);
+    fragment_shader.compile(io, allocator) catch unreachable;
+    const shader_program = gl.Program.init(vertex_shader, fragment_shader) catch unreachable;
+
+    // c.glDeleteShader(vertex_shader.idx);
+    vertex_shader.delete();
+    fragment_shader.delete();
+    // c.glDeleteShader(fragment_shader.idx);
 
     // const program = gl.Program.init(vertex_shader, fragment_shader);
-    shaderProgram = c.glCreateProgram();
-    c.glAttachShader(shaderProgram, vertex_shader.idx);
-    c.glAttachShader(shaderProgram, fragment_shader.idx);
-    c.glLinkProgram(shaderProgram);
-    checkProgramLinkStatus(shaderProgram);
-
-    c.glDeleteShader(vertex_shader.idx);
-    c.glDeleteShader(fragment_shader.idx);
+    // shaderProgram = c.glCreateProgram();
+    // c.glAttachShader(shaderProgram, vertex_shader.idx);
+    // c.glAttachShader(shaderProgram, fragment_shader.idx);
+    // c.glLinkProgram(shaderProgram);
+    // checkProgramLinkStatus(shaderProgram);
 
     // Get transform uniform location
-    transformLoc = c.glGetUniformLocation(shaderProgram, "transform");
+    const transformLoc = c.glGetUniformLocation(shader_program.idx, "transform");
 
     // Initialize draw resources (VAO, VBO, EBO)
     try initDrawResources();
@@ -159,7 +146,7 @@ pub fn run(io: std.Io, allocator: Allocator) !void {
 
     var xoff: f32 = 1;
 
-    c.glUseProgram(shaderProgram);
+    c.glUseProgram(shader_program.idx);
     setupOrthographicProjection();
 
     var listener = input.Listener(.Keyboard).init(allocator);
