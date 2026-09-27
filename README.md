@@ -50,6 +50,7 @@ Command `zig build` produces a test game binary for all supported systems listed
 
 Features that will be added before 1.0:
 
+* UI
 * Audio
 * 3D
 * Physics

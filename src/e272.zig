@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const panic = std.debug.panic;
 pub const gen = @import("gen.zig");
-pub const out = @import("out.zig");
+pub const debug = @import("debug.zig");
 
 pub const c = @cImport({
     @cInclude("stdlib.h");

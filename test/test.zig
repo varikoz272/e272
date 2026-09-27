@@ -13,7 +13,7 @@ pub fn main(init: std.process.Init) !void {
             const yf: f32 = @floatFromInt(y);
             const color: u8 = @intFromFloat(map.at(xf, yf) * 256);
 
-            e.out.printBgRed(@intCast(x + 10), @intCast(y + 10), color);
+            e.debug.printBgRed(@intCast(x + 10), @intCast(y + 10), color);
         }
     }
 
@@ -25,6 +25,10 @@ pub fn main(init: std.process.Init) !void {
 
     var cam_listener = e.InputListener(e.Camera).init(cam_press, window, io);
     window.cam.input_listener = &cam_listener;
+
+    e.debug.log("LOG");
+    e.debug.warn("WARNING");
+    e.debug.err("ERROR");
 
     window.loop(&scene);
 }
