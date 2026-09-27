@@ -24,12 +24,9 @@ pub const Scene = struct {
     objs: std.ArrayList(Object),
     allocator: Allocator,
 
-    pub fn default(io: Io, allocator: Allocator) !@This() {
-        var objs = try std.ArrayList(Object).initCapacity(allocator, 1);
-        try objs.append(allocator, try Object.default(io, allocator));
-
+    pub fn empty(allocator: Allocator) !@This() {
         return @This(){
-            .objs = objs,
+            .objs = try std.ArrayList(Object).initCapacity(allocator, 0),
             .allocator = allocator,
         };
     }
@@ -58,10 +55,10 @@ pub const Object = struct {
     draw: *const fn (*@This(), prog: c_uint, anything: u64) void,
     input_listener: ?*InputListener(@This()),
 
-    pub fn default(io: Io, allocator: Allocator) !Object {
+    pub fn init(model: Model, visual: Visual) Object {
         return @This(){
-            .model = Model.xy(0, 0),
-            .visual = try Visual.init(io, allocator),
+            .model = model,
+            .visual = visual,
             .draw = default_draw,
             .input_listener = null,
         };
@@ -128,7 +125,7 @@ pub const Visual = struct {
     texs: std.StringHashMap(c_uint),
 
     // TODO: add support for changing buffer values
-    fn default_gl() struct { vao: c.GLuint, vbo: c.GLuint } {
+    fn gl2D() struct { vao: c.GLuint, vbo: c.GLuint } {
         const buffer = [_]f32{
             // positions        // texture coords
             0.0, 0.0, 0.0, 0.0, 0.0, // bottom-left
@@ -154,7 +151,7 @@ pub const Visual = struct {
         return .{ .vao = vao, .vbo = vbo };
     }
 
-    pub fn init(io: Io, allocator: Allocator) !@This() {
+    pub fn init2D(io: Io, allocator: Allocator) !@This() {
         // WARNING: HARD CODED
         var vert_code = try readFile("./res/shaders/ortho3dtextured.vert", io, allocator);
         defer allocator.free(vert_code);
@@ -184,14 +181,12 @@ pub const Visual = struct {
 
         c.glUseProgram(prog);
 
-        const gl = default_gl();
+        const gl = gl2D();
 
-        var this = @This(){
+        return @This(){
             .gl = .{ .prog = prog, .vao = gl.vao, .vbo = gl.vbo },
             .texs = .init(allocator),
         };
-        try this.addTexture("pesok_tile.png", 0, io, allocator);
-        return this;
     }
 
     fn checkCompileStatus(T: []const u8, d: c.GLuint) error{CompilationFailed}!void {
@@ -207,13 +202,13 @@ pub const Visual = struct {
         }
     }
 
-    pub fn addTexture(this: *@This(), comptime path: []const u8, slot: c_int, io: std.Io, allocator: Allocator) !void {
+    pub fn addTexture(this: *@This(), path: []const u8, slot: c_int, io: std.Io, allocator: Allocator) !void {
         c.glUseProgram(this.gl.prog);
         c.glActiveTexture(@intCast(c.GL_TEXTURE0 + slot));
 
         var read_buffer: [img.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
 
-        var file = try std.Io.Dir.cwd().openFile(io, "./res/" ++ path, .{ .mode = .read_only });
+        var file = try std.Io.Dir.cwd().openFile(io, path, .{ .mode = .read_only });
         defer file.close(io);
 
         var image = try img.Image.fromFile(allocator, io, file, read_buffer[0..]);

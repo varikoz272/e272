@@ -232,8 +232,8 @@ pub fn Noise(comptime Float: type) type {
             // Normalize to range of 0..1
             const n = 0.5 * (1.0 + @max(-1.0, @min(1.0, self.genNoise2D(x, y))));
             return switch (@typeInfo(T)) {
-                .Int => min + @as(T, @intFromFloat(n * @as(Float, @floatFromInt(max - min)))),
-                .Float => min + @as(T, @floatCast(n * @as(Float, @floatCast(max - min)))),
+                .int => min + @as(T, @intFromFloat(n * @as(Float, @floatFromInt(max - min)))),
+                .float => min + @as(T, @floatCast(n * @as(Float, @floatCast(max - min)))),
                 else => @compileError(@typeName(T) ++ " is not a numeric type"),
             };
         }

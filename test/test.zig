@@ -5,30 +5,33 @@ pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
 
-    const map = e.gen.Map2.init(10);
-
-    for (0..20) |x| {
-        for (0..20) |y| {
-            const xf: f32 = @floatFromInt(x);
-            const yf: f32 = @floatFromInt(y);
-            const color: u8 = @intFromFloat(map.at(xf, yf) * 256);
-
-            e.debug.printBgRed(@intCast(x + 10), @intCast(y + 10), color);
-        }
-    }
-
     var window = e.Window.init(240 * 5, 160 * 5, "MAIIIUHA272");
     defer window.deinit();
 
-    var scene = try e.Scene.default(io, allocator);
+    var scene = try e.Scene.empty(allocator);
     defer scene.deinit();
 
+    try scene.objs.ensureTotalCapacity(scene.allocator, 1000);
+    for (0..10) |x| {
+        for (0..100) |y| {
+            var obj = e.Object.init(
+                e.Model.xy(@floatFromInt(x * 16), @floatFromInt(y * 16)),
+                try e.Visual.init2D(io, allocator),
+            );
+
+            // const value = map.at(@floatFromInt(x), @floatFromInt(y));
+            // const color: u8 = @trunc(value * 256);
+            // e.debug.printBgRed(@intCast(x + 10), @intCast(y + 10), color);
+            //
+            // const texture_file_name = if (value < 0.5) "res/pesok_tile.png" else "res/dark_pesok_tile.png";
+            const texture_file_name = if (x % 2 == 0) "res/pesok_tile.png" else "res/dark_pesok_tile.png";
+            try obj.visual.?.addTexture(texture_file_name, @intCast(x % 2), io, allocator);
+
+            try scene.objs.append(scene.allocator, obj);
+        }
+    }
     var cam_listener = e.InputListener(e.Camera).init(cam_press, window, io);
     window.cam.input_listener = &cam_listener;
-
-    e.debug.log("LOG");
-    e.debug.warn("WARNING");
-    e.debug.err("ERROR");
 
     window.loop(&scene);
 }
