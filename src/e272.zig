@@ -107,6 +107,7 @@ pub const Camera = struct {
             c.glUniformMatrix4fv(proj_loc, 1, c.GL_FALSE, @ptrCast(&proj));
 
             c.glActiveTexture(c.GL_TEXTURE0);
+            c.glBindTexture(c.GL_TEXTURE_2D, visual.tex_id);
             c.glUniform1i(c.glGetUniformLocation(prog, "tex"), 0);
 
             c.glDrawArrays(c.GL_TRIANGLE_STRIP, 0, 4);
@@ -122,7 +123,7 @@ pub const Visual = struct {
         vbo: c.GLuint,
     },
 
-    texs: std.StringHashMap(c_uint),
+    tex_id: c_uint = 0,
 
     // TODO: add support for changing buffer values
     fn gl2D() struct { vao: c.GLuint, vbo: c.GLuint } {
@@ -185,7 +186,6 @@ pub const Visual = struct {
 
         return @This(){
             .gl = .{ .prog = prog, .vao = gl.vao, .vbo = gl.vbo },
-            .texs = .init(allocator),
         };
     }
 
@@ -224,6 +224,7 @@ pub const Visual = struct {
         var texture_id: c_uint = 0;
         c.glGenTextures(1, &texture_id);
         c.glBindTexture(c.GL_TEXTURE_2D, texture_id);
+        this.tex_id = texture_id;
 
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_S, c.GL_REPEAT);
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_T, c.GL_REPEAT);
@@ -232,12 +233,9 @@ pub const Visual = struct {
 
         const raw_bytes = image.rawBytes();
         c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_RGBA, width, height, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, raw_bytes.ptr);
-
-        try this.texs.put(path, texture_id);
     }
 
     pub fn deinit(this: *@This()) void {
-        this.texs.deinit();
         c.glDeleteBuffers(1, &this.gl.vbo);
         c.glDeleteVertexArrays(1, &this.gl.vao);
     }
