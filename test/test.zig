@@ -8,13 +8,16 @@ pub fn main(init: std.process.Init) !void {
     var window = e.Window.init(240 * 5, 160 * 5, "MAIIIUHA272");
     defer window.deinit();
 
+    var ctx = try e.OpenGLContext.init(allocator);
+    defer ctx.deinit();
+
     var scene = try e.Scene.empty(allocator);
     defer scene.deinit();
 
     const map = e.gen.Map2.init(100, 0, 0.9999999);
 
-    try scene.objs.ensureTotalCapacity(scene.allocator, 1000);
-    for (0..10) |x| {
+    try scene.objs.ensureTotalCapacity(scene.allocator, 10000);
+    for (0..100) |x| {
         for (0..100) |y| {
             var obj = e.Object.init(
                 e.Model.xy(@floatFromInt(x * 16), @floatFromInt(y * 16)),
@@ -22,10 +25,10 @@ pub fn main(init: std.process.Init) !void {
             );
 
             const value = map.at(@floatFromInt(x), @floatFromInt(y));
-            const color: u8 = @trunc(value * 256);
-            e.debug.printBgRed(@intCast(x + 10), @intCast(y + 10), color);
+            // const color: u8 = @trunc(value * 256);
+            // e.debug.printBgRed(@intCast(x + 10), @intCast(y + 10), color);
             const texture_file_name = if (value < 0.5) "res/pesok_tile.png" else "res/dark_pesok_tile.png";
-            try obj.visual.?.addTexture(texture_file_name, if (value < 0.5) 0 else 1, io, allocator);
+            try obj.visual.?.setTexture(texture_file_name, &ctx, io, allocator);
 
             try scene.objs.append(scene.allocator, obj);
         }

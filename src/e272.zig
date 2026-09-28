@@ -15,6 +15,68 @@ pub const c = @cImport({
 const img = @import("zigimg");
 const m = @import("zmath");
 
+pub const OpenGLContext = struct {
+    /// All loaded textures. Implements one of key features of OpenGLContext - textures reusability
+    texture_pull: std.StringHashMap(c_uint),
+
+    arena: Allocator,
+
+    pub fn init(arena: Allocator) !@This() {
+        return @This(){
+            .texture_pull = .init(arena),
+            .arena = arena,
+        };
+    }
+
+    pub fn loadTextureFromPath(this: *@This(), path: []const u8, io: Io, allocator: Allocator) !c_uint {
+        if (this.texture_pull.get(path)) |tex_id| return tex_id;
+
+        var read_buffer: [img.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
+
+        var file = try std.Io.Dir.cwd().openFile(io, path, .{ .mode = .read_only });
+        defer file.close(io);
+
+        var image = try img.Image.fromFile(allocator, io, file, read_buffer[0..]);
+        defer image.deinit(allocator);
+
+        if (image.pixelFormat() != .rgba32) {
+            try image.convert(allocator, .rgba32);
+        }
+
+        const width = @as(c_int, @intCast(image.width));
+        const height = @as(c_int, @intCast(image.height));
+
+        var texture_id: c_uint = 0;
+        c.glGenTextures(1, &texture_id);
+
+        const unit = 0;
+        c.glActiveTexture(@intCast(c.GL_TEXTURE0 + unit));
+        c.glBindTexture(c.GL_TEXTURE_2D, texture_id);
+
+        try this.texture_pull.put(path, texture_id);
+
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_S, c.GL_REPEAT);
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_T, c.GL_REPEAT);
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
+
+        const raw_bytes = image.rawBytes();
+        c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_RGBA, width, height, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, raw_bytes.ptr);
+
+        debug.log("NEW TEXTURE IS GENERATED");
+
+        return texture_id;
+    }
+
+    pub fn deinit(this: *@This()) void {
+        var tex_iter = this.texture_pull.valueIterator();
+        while (tex_iter.next()) |tex|
+            c.glDeleteTextures(1, tex);
+
+        this.texture_pull.deinit();
+    }
+};
+
 pub const Game = struct {
     window: Window,
     scenes: std.ArrayList(Scene),
@@ -202,37 +264,8 @@ pub const Visual = struct {
         }
     }
 
-    pub fn addTexture(this: *@This(), path: []const u8, slot: c_int, io: std.Io, allocator: Allocator) !void {
-        c.glUseProgram(this.gl.prog);
-        c.glActiveTexture(@intCast(c.GL_TEXTURE0 + slot));
-
-        var read_buffer: [img.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
-
-        var file = try std.Io.Dir.cwd().openFile(io, path, .{ .mode = .read_only });
-        defer file.close(io);
-
-        var image = try img.Image.fromFile(allocator, io, file, read_buffer[0..]);
-        defer image.deinit(allocator);
-
-        if (image.pixelFormat() != .rgba32) {
-            try image.convert(allocator, .rgba32);
-        }
-
-        const width = @as(c_int, @intCast(image.width));
-        const height = @as(c_int, @intCast(image.height));
-
-        var texture_id: c_uint = 0;
-        c.glGenTextures(1, &texture_id);
-        c.glBindTexture(c.GL_TEXTURE_2D, texture_id);
-        this.tex_id = texture_id;
-
-        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_S, c.GL_REPEAT);
-        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_WRAP_T, c.GL_REPEAT);
-        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
-        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
-
-        const raw_bytes = image.rawBytes();
-        c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_RGBA, width, height, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, raw_bytes.ptr);
+    pub fn setTexture(this: *@This(), path: []const u8, ctx: *OpenGLContext, io: std.Io, allocator: Allocator) !void {
+        this.tex_id = try ctx.loadTextureFromPath(path, io, allocator);
     }
 
     pub fn deinit(this: *@This()) void {
