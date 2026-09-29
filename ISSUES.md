@@ -14,3 +14,10 @@ try obj.visual.?.addTexture(texture_file_name, @intCast(x % 2), io, allocator);
 
 No optimization. Each object has its own allocated value for vbo, vao, texture, program. All of those have to be shared from "pulls" of allocated values instead, to hold less memory
 
+**FIX**: added context for optimization
+
+```zig
+pub const OpenGLContext = struct {
+    /// All loaded textures. Implements one of key features of OpenGLContext - textures reusability
+    texture_pull: std.StringHashMap(c_uint),
+```
