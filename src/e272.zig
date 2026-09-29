@@ -63,7 +63,7 @@ pub const OpenGLContext = struct {
         const raw_bytes = image.rawBytes();
         c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_RGBA, width, height, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, raw_bytes.ptr);
 
-        debug.log("NEW TEXTURE IS GENERATED");
+        debug.log("new texture - {s}", .{path}, .{"OpenGL"});
 
         return texture_id;
     }
@@ -147,10 +147,22 @@ pub const Camera = struct {
         return @This(){ .view = .zero(), .projection = .gba(), .input_listener = null };
     }
 
+    pub fn within_view(this: @This(), obj: Object) bool {
+        if (obj.visual == null) return false;
+
+        // WARNING: HARDCODED ONLY FOR TILES
+        if (obj.model.x >= this.view.x + 240 * 5) return false;
+        if (obj.model.y >= this.view.y + 160 * 5) return false;
+        if (obj.model.x < this.view.x - 16) return false;
+        if (obj.model.y < this.view.y - 16) return false;
+
+        return true;
+    }
+
     // WARNING: HARD CODED ONLY FOR 2D
     pub fn draw(this: @This(), objs: []Object) void {
         for (objs) |*obj| {
-            if (obj.visual == null) continue;
+            if (!this.within_view(obj.*)) continue;
             const visual = obj.visual.?;
 
             c.glUseProgram(visual.gl.prog);

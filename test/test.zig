@@ -16,9 +16,9 @@ pub fn main(init: std.process.Init) !void {
 
     const map = e.gen.Map2.init(100, 0, 0.9999999);
 
-    try scene.objs.ensureTotalCapacity(scene.allocator, 10000);
-    for (0..100) |x| {
-        for (0..100) |y| {
+    try scene.objs.ensureTotalCapacity(scene.allocator, 30 * 30);
+    for (0..30) |x| {
+        for (0..30) |y| {
             var obj = e.Object.init(
                 e.Model.xy(@floatFromInt(x * 16), @floatFromInt(y * 16)),
                 try e.Visual.init2D(io, allocator),

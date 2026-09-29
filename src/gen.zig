@@ -21,7 +21,7 @@ pub const Map2 = struct {
             .cellular_distance = .hybrid,
             .cellular_return = .cell_value,
 
-            .domain_warp_amp = 100.0,
+            .domain_warp_amp = 1.0,
             .domain_warp_type = .simplex,
         };
     };
