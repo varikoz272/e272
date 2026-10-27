@@ -115,7 +115,7 @@ pub const Object = struct {
     physical: ?Physical = null,
 
     draw: *const fn (*@This(), prog: c_uint, anything: u64) void,
-    input_listener: ?*InputListener(@This()),
+    input_listener: ?*Listener(@This()),
 
     pub fn init(model: Model, visual: Visual) Object {
         return @This(){
@@ -141,20 +141,19 @@ pub const Camera = struct {
     view: View,
     projection: Projection,
 
-    input_listener: ?*InputListener(@This()),
+    input_listener: ?*Listener(@This()),
 
     pub fn gba() @This() {
         return @This(){ .view = .zero(), .projection = .gba(), .input_listener = null };
     }
 
-    pub fn within_view(this: @This(), obj: Object) bool {
+    pub fn within_view2D(this: @This(), obj: Object) bool {
         if (obj.visual == null) return false;
 
-        // WARNING: HARDCODED ONLY FOR TILES
-        if (obj.model.x >= this.view.x + 240 * 5) return false;
-        if (obj.model.y >= this.view.y + 160 * 5) return false;
-        if (obj.model.x < this.view.x - 16) return false;
-        if (obj.model.y < this.view.y - 16) return false;
+        if (obj.model.x >= this.view.x + this.projection.width) return false;
+        if (obj.model.y >= this.view.y + this.projection.height) return false;
+        if (obj.model.x < this.view.x - obj.model.width) return false;
+        if (obj.model.y < this.view.y - obj.model.height) return false;
 
         return true;
     }
@@ -162,7 +161,7 @@ pub const Camera = struct {
     // WARNING: HARD CODED ONLY FOR 2D
     pub fn draw(this: @This(), objs: []Object) void {
         for (objs) |*obj| {
-            if (!this.within_view(obj.*)) continue;
+            if (!this.within_view2D(obj.*)) continue;
             const visual = obj.visual.?;
 
             c.glUseProgram(visual.gl.prog);
@@ -356,8 +355,37 @@ pub const View = struct {
 
     zoom: f32,
 
+    change_listener: ?*Listener(View),
+
     pub fn zero() @This() {
-        return @This(){ .x = 0, .y = 0, .z = 0, .rx = 0, .ry = 0, .rz = 0, .zoom = 1 };
+        return @This(){ .x = 0, .y = 0, .z = 0, .rx = 0, .ry = 0, .rz = 0, .zoom = 1, .change_listener = null };
+    }
+
+    pub inline fn move(this: *@This(), x_off: f32, y_off: f32, z_off: f32) void {
+        this.x += x_off;
+        this.y += y_off;
+        this.z += z_off;
+
+        if (this.change_listener) |l| l.listen(this);
+    }
+
+    pub inline fn moveO(this: *@This(), x_off: f32, y_off: f32, z_off: f32) void {
+        this.x +%= x_off;
+        this.y +%= y_off;
+        this.z +%= z_off;
+
+        if (this.change_listener) |l| l.listen(this);
+    }
+
+    pub inline fn zoomIn(this: *@This(), val: f32, t: enum { centered, expanded }) void {
+        this.zoom += val;
+
+        // WARNING: doesnt work
+        if (t == .centered) {
+            this.move(this.x - val / 2, this.y - val / 2, 0);
+        }
+
+        if (this.change_listener) |l| l.listen(this);
     }
 
     pub fn vec(this: @This()) [4]@Vector(4, f32) {
@@ -451,22 +479,23 @@ pub const Window = struct {
     }
 };
 
-// WARNING: HARDCODED: add delta interface instead of manually calculating it
-pub fn InputListener(comptime T: type) type {
+pub fn Listener(comptime T: type) type {
     return switch (T) {
-        Object, Camera => struct {
+        Object, Camera, View => struct {
 
             // WARNING: remove glfw enum
-            action: *const fn (*@This(), *T, delta: i64) void,
+            action: *const fn (*@This(), *T, data: *anyopaque, delta: i64) void,
+            data: *anyopaque,
             target: Window,
             deaf: bool,
             time_prev: i64,
 
             io: std.Io,
 
-            pub fn init(action: *const fn (*@This(), *T, delta: i64) void, target: Window, io: std.Io) @This() {
+            pub fn init(action: *const fn (*@This(), *T, data: *anyopaque, delta: i64) void, data: *anyopaque, target: Window, io: std.Io) @This() {
                 return @This(){
                     .action = action,
+                    .data = data,
                     .target = target,
                     .deaf = false,
                     .time_prev = std.Io.Clock.real.now(io).toMilliseconds(),
@@ -479,7 +508,7 @@ pub fn InputListener(comptime T: type) type {
                 const delta = now - this.time_prev;
                 this.time_prev = now;
 
-                this.action(this, obj, delta);
+                this.action(this, obj, this.data, delta);
             }
 
             pub fn is_pressing_key(this: *@This(), glfw_key: c_int) bool {
