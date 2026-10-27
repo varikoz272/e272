@@ -86,14 +86,21 @@ pub const Scene = struct {
     objs: std.ArrayList(Object),
     allocator: Allocator,
 
+    input_listener: ?*Listener(@This()),
+
     pub fn empty(allocator: Allocator) !@This() {
         return @This(){
             .objs = try std.ArrayList(Object).initCapacity(allocator, 0),
             .allocator = allocator,
+            .input_listener = null,
         };
     }
 
     pub fn listen(this: *@This()) void {
+        if (this.input_listener) |l| {
+            if (!l.deaf) l.listen(this);
+        }
+
         for (this.objs.items) |*obj| {
             if (obj.input_listener == null) continue;
             if (obj.input_listener.?.deaf) continue;
@@ -114,7 +121,7 @@ pub const Object = struct {
     visual: ?Visual = null,
     physical: ?Physical = null,
 
-    draw: *const fn (*@This(), prog: c_uint, anything: u64) void,
+    draw: *const fn (@This(), prog: c_uint, anything: u64) void,
     input_listener: ?*Listener(@This()),
 
     pub fn init(model: Model, visual: Visual) Object {
@@ -126,7 +133,7 @@ pub const Object = struct {
         };
     }
 
-    fn default_draw(this: *@This(), prog: c_uint, _: u64) void {
+    fn default_draw(this: @This(), prog: c_uint, _: u64) void {
         const model_loc = c.glGetUniformLocation(prog, "model");
         const model = this.model.vec();
         c.glUniformMatrix4fv(model_loc, 1, c.GL_FALSE, @ptrCast(&model));
@@ -140,11 +147,19 @@ pub const Object = struct {
 pub const Camera = struct {
     view: View,
     projection: Projection,
+    allocator: Allocator,
+    pull: std.ArrayList(Object),
 
     input_listener: ?*Listener(@This()),
 
-    pub fn gba() @This() {
-        return @This(){ .view = .zero(), .projection = .gba(), .input_listener = null };
+    pub fn gba(allocator: Allocator) @This() {
+        return @This(){
+            .view = .zero(),
+            .projection = .gba(),
+            .input_listener = null,
+            .allocator = allocator,
+            .pull = std.ArrayList(Object).initCapacity(allocator, 0) catch unreachable,
+        };
     }
 
     pub fn within_view2D(this: @This(), obj: Object) bool {
@@ -159,10 +174,11 @@ pub const Camera = struct {
     }
 
     // WARNING: HARD CODED ONLY FOR 2D
-    pub fn draw(this: @This(), objs: []Object) void {
-        for (objs) |*obj| {
-            if (!this.within_view2D(obj.*)) continue;
-            const visual = obj.visual.?;
+    pub fn draw(this: @This()) void {
+        for (this.pull.items) |obj| {
+            // if (!this.within_view2D(obj.*)) continue;
+            // TODO: make panic if a non visual object is forced to be drawn
+            const visual = obj.visual orelse unreachable;
 
             c.glUseProgram(visual.gl.prog);
             c.glBindVertexArray(visual.gl.vao);
@@ -186,6 +202,10 @@ pub const Camera = struct {
             c.glDrawArrays(c.GL_TRIANGLE_STRIP, 0, 4);
             checkGLError();
         }
+    }
+
+    pub fn deinit(this: *@This()) void {
+        this.pull.deinit(this.allocator);
     }
 };
 
@@ -425,7 +445,7 @@ pub const Window = struct {
     cam: Camera,
     clock: std.Io.Clock,
 
-    pub fn init(width: usize, height: usize, title: []const u8) @This() {
+    pub fn init(width: usize, height: usize, title: []const u8, allocator: Allocator) @This() {
         if (c.glfwInit() == 0)
             panic("GLFW init", .{});
 
@@ -449,7 +469,7 @@ pub const Window = struct {
 
         return @This(){
             .glfw = window.?,
-            .cam = .gba(),
+            .cam = .gba(allocator),
             .clock = std.Io.Clock.real,
         };
     }
@@ -466,7 +486,7 @@ pub const Window = struct {
 
             scene.listen();
             if (window.cam.input_listener) |li| li.listen(&window.cam);
-            window.cam.draw(scene.objs.items);
+            window.cam.draw();
 
             c.glfwSwapBuffers(window.glfw);
             c.glfwPollEvents();
@@ -474,6 +494,7 @@ pub const Window = struct {
     }
 
     pub fn deinit(this: *@This()) void {
+        this.cam.deinit();
         c.glfwDestroyWindow(this.glfw);
         c.glfwTerminate();
     }
@@ -481,7 +502,7 @@ pub const Window = struct {
 
 pub fn Listener(comptime T: type) type {
     return switch (T) {
-        Object, Camera, View => struct {
+        Object, Camera, View, Scene => struct {
 
             // WARNING: remove glfw enum
             action: *const fn (*@This(), *T, data: *anyopaque, delta: i64) void,
