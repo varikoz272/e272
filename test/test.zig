@@ -75,10 +75,12 @@ pub fn view_change(_: *e.Listener(e.View), view: *e.View, data: *anyopaque, _: i
 
     cam.pull.clearAndFree(cam.allocator);
 
-    const tiles_in_row: i32 = @ceil(240 / tile_size * cam.view.zoom);
-    const tiles_in_column: i32 = @ceil(160 / tile_size * cam.view.zoom);
-    const first_tile_x: i32 = @round(cam.view.x / tile_size);
-    const first_tile_y: i32 = @round(cam.view.y / tile_size);
+    var tiles_in_row: i32 = @ceil((240 / tile_size) * cam.view.zoom);
+    tiles_in_row += 1;
+    var tiles_in_column: i32 = @ceil((160 / tile_size) * cam.view.zoom);
+    tiles_in_column += 1;
+    const first_tile_x: i32 = @floor(cam.view.x / tile_size);
+    const first_tile_y: i32 = @floor(cam.view.y / tile_size);
 
     var x: i32 = first_tile_x;
     var y: i32 = first_tile_y;
