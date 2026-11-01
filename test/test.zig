@@ -24,11 +24,11 @@ pub fn main(init: std.process.Init) !void {
     var scene = try e.Scene.empty(allocator);
     defer scene.deinit();
 
-    const tile_size: f32 = 16.0;
+    const tile_size: f32 = 8.0;
 
     var map = e.gen.Map2.init(100, 0, 0.9999999);
 
-    try scene.objs.ensureTotalCapacity(scene.allocator, 30 * 30);
+    try scene.objs.ensureTotalCapacity(100 * 100);
     var speed: f32 = 0.5;
     var cam_listener = e.Listener(e.Camera).init(cam_press, &speed, window, io);
     window.cam.input_listener = &cam_listener;
@@ -56,7 +56,7 @@ pub fn map_reset_press(this: *e.Listener(e.Scene), scene: *e.Scene, data: *anyop
         const tuple_data: *struct { *e.gen.Map2, *e.View } = @ptrCast(@alignCast(data));
         var map = tuple_data.@"0";
         map.gen.seed +%= 1;
-        scene.objs.clearAndFree(scene.allocator);
+        scene.clear();
         tuple_data.@"1".move(0, 0, 0);
     }
 }
@@ -73,7 +73,7 @@ pub fn view_change(_: *e.Listener(e.View), view: *e.View, data: *anyopaque, _: i
     const allocator = tuple_data.allocator;
     const map = tuple_data.map;
 
-    cam.pull.clearAndFree(cam.allocator);
+    cam.pull.clearAndFree();
 
     var tiles_in_row: i32 = @ceil((240 / tile_size) * cam.view.zoom);
     tiles_in_row += 1;
@@ -87,20 +87,32 @@ pub fn view_change(_: *e.Listener(e.View), view: *e.View, data: *anyopaque, _: i
 
     while (y < tiles_in_column + first_tile_y) : (y += 1) {
         while (x < tiles_in_row + first_tile_x) : (x += 1) {
-            var obj = e.Object.init(
-                e.Model.xy(@floatFromInt(x * 16), @floatFromInt(y * 16)),
-                e.Visual.init2D(io, allocator) catch unreachable,
-            );
+            const xf: f32 = @floatFromInt(x);
+            const yf: f32 = @floatFromInt(y);
 
-            const value = map.at(@floatFromInt(x), @floatFromInt(y));
-            e.debug.log("{d}", .{map.gen.seed}, .{"CURRENT SEED"});
-            const texture_file_name = if (value < 0.5) "res/pesok_tile.png" else "res/dark_pesok_tile.png";
-            obj.visual.?.setTexture(texture_file_name, ctx, io, allocator) catch unreachable;
+            const model = e.Model.init2D(xf * tuple_data.tile_size, yf * tuple_data.tile_size, tile_size, tile_size);
+            const obj = scene.objs.get(&model) orelse blk: {
+                var new_obj = allocator.create(e.Object) catch unreachable;
+                new_obj.* = e.Object.init(
+                    model,
+                    e.Visual.init2D(io, allocator) catch unreachable,
+                );
 
-            cam.pull.append(cam.allocator, obj) catch unreachable;
+                const value = map.at(@floatFromInt(x), @floatFromInt(y));
+                e.debug.log("{d}", .{map.gen.seed}, .{"CURRENT SEED"});
+                const texture_file_name = if (value < 0.5) "res/pesok_tile.png" else "res/dark_pesok_tile.png";
+                new_obj.visual.?.setTexture(texture_file_name, ctx, io, allocator) catch unreachable;
+
+                scene.objs.put(&new_obj.model, new_obj) catch unreachable;
+
+                break :blk new_obj;
+            };
+
+            cam.pull.put(&obj.model, obj) catch unreachable;
         }
         x = first_tile_x;
     }
+    e.debug.log("{d}", .{scene.objs.count()}, .{"scene.obj.count()"});
 }
 
 pub fn cam_press(this: *e.Listener(e.Camera), cam: *e.Camera, data: *anyopaque, delta: i64) void {

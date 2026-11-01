@@ -83,14 +83,14 @@ pub const Game = struct {
 };
 
 pub const Scene = struct {
-    objs: std.ArrayList(Object),
+    objs: std.HashMap(*const Model, *Object, Object.MapContext, std.hash_map.default_max_load_percentage),
     allocator: Allocator,
 
     input_listener: ?*Listener(@This()),
 
     pub fn empty(allocator: Allocator) !@This() {
         return @This(){
-            .objs = try std.ArrayList(Object).initCapacity(allocator, 0),
+            .objs = std.HashMap(*const Model, *Object, Object.MapContext, std.hash_map.default_max_load_percentage).init(allocator),
             .allocator = allocator,
             .input_listener = null,
         };
@@ -101,7 +101,9 @@ pub const Scene = struct {
             if (!l.deaf) l.listen(this);
         }
 
-        for (this.objs.items) |*obj| {
+        var iter = this.objs.valueIterator();
+        while (iter.next()) |obj_ptr| {
+            const obj = obj_ptr.*;
             if (obj.input_listener == null) continue;
             if (obj.input_listener.?.deaf) continue;
             var listener = obj.input_listener.?;
@@ -109,10 +111,22 @@ pub const Scene = struct {
         }
     }
 
+    pub fn clear(this: *@This()) void {
+        var iter = this.objs.valueIterator();
+        while (iter.next()) |obj| {
+            obj.*.deinit();
+            this.objs.allocator.destroy(obj.*);
+        }
+        this.objs.clearAndFree();
+    }
+
     pub fn deinit(this: *@This()) void {
-        for (this.objs.items) |*obj|
-            obj.deinit();
-        this.objs.deinit(this.allocator);
+        var iter = this.objs.valueIterator();
+        while (iter.next()) |obj| {
+            obj.*.deinit();
+            this.objs.allocator.destroy(obj.*);
+        }
+        this.objs.deinit();
     }
 };
 
@@ -123,6 +137,23 @@ pub const Object = struct {
 
     draw: *const fn (@This(), prog: c_uint, anything: u64) void,
     input_listener: ?*Listener(@This()),
+
+    pub const MapContext = struct {
+        pub fn hash(_: @This(), k: *const Model) u64 {
+            return k.hash();
+        }
+        pub fn eql(_: @This(), k1: *const Model, k2: *const Model) bool {
+            return k1.x == k2.x and
+                k1.y == k2.y and
+                k1.z == k2.z and
+                k1.rx == k2.rx and
+                k1.ry == k2.ry and
+                k1.rz == k2.rz and
+                k1.width == k2.width and
+                k1.height == k2.height and
+                k1.length == k2.length;
+        }
+    };
 
     pub fn init(model: Model, visual: Visual) Object {
         return @This(){
@@ -148,7 +179,7 @@ pub const Camera = struct {
     view: View,
     projection: Projection,
     allocator: Allocator,
-    pull: std.ArrayList(Object),
+    pull: std.HashMap(*const Model, *const Object, Object.MapContext, std.hash_map.default_max_load_percentage),
 
     input_listener: ?*Listener(@This()),
 
@@ -158,7 +189,7 @@ pub const Camera = struct {
             .projection = .gba(),
             .input_listener = null,
             .allocator = allocator,
-            .pull = std.ArrayList(Object).initCapacity(allocator, 0) catch unreachable,
+            .pull = std.HashMap(*const Model, *const Object, Object.MapContext, std.hash_map.default_max_load_percentage).init(allocator),
         };
     }
 
@@ -175,7 +206,9 @@ pub const Camera = struct {
 
     // WARNING: HARD CODED ONLY FOR 2D
     pub fn draw(this: @This()) void {
-        for (this.pull.items) |obj| {
+        var iter = this.pull.valueIterator();
+        while (iter.next()) |obj_ptr| {
+            const obj = obj_ptr.*;
             // if (!this.within_view2D(obj.*)) continue;
             // TODO: make panic if a non visual object is forced to be drawn
             const visual = obj.visual orelse unreachable;
@@ -185,7 +218,7 @@ pub const Camera = struct {
 
             const prog = visual.gl.prog;
 
-            obj.draw(obj, prog, undefined);
+            obj.draw(obj.*, prog, undefined);
 
             const view_loc = c.glGetUniformLocation(prog, "view");
             const view = this.view.vec();
@@ -205,7 +238,7 @@ pub const Camera = struct {
     }
 
     pub fn deinit(this: *@This()) void {
-        this.pull.deinit(this.allocator);
+        this.pull.deinit();
     }
 };
 
@@ -340,6 +373,20 @@ pub const Model = struct {
         };
     }
 
+    pub fn init2D(x: f32, y: f32, width: f32, height: f32) @This() {
+        return @This(){
+            .x = x,
+            .y = y,
+            .z = 0,
+            .rx = 0,
+            .ry = 0,
+            .rz = 0,
+            .width = width,
+            .height = height,
+            .length = 1,
+        };
+    }
+
     pub fn vec(this: @This()) [4]@Vector(4, f32) {
         var model = m.identity();
 
@@ -361,6 +408,12 @@ pub const Model = struct {
         model = m.mul(model, m.translation(this.x, this.y, this.z));
 
         return model;
+    }
+
+    pub fn hash(this: @This()) u64 {
+        const xb: u32 = @bitCast(this.x);
+        const yb: u32 = @bitCast(this.y);
+        return (@as(u64, xb) << 32) | @as(u64, yb);
     }
 };
 
