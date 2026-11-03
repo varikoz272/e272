@@ -335,6 +335,7 @@ pub const Visual = struct {
     pub fn deinit(this: *@This()) void {
         c.glDeleteBuffers(1, &this.gl.vbo);
         c.glDeleteVertexArrays(1, &this.gl.vao);
+        c.glDeleteProgram(this.gl.prog);
     }
 };
 

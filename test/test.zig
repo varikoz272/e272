@@ -24,7 +24,7 @@ pub fn main(init: std.process.Init) !void {
     var scene = try e.Scene.empty(allocator);
     defer scene.deinit();
 
-    const tile_size: f32 = 8.0;
+    const tile_size: f32 = 8;
 
     var map = e.gen.Map2.init(100, 0, 0.9999999);
 
@@ -44,7 +44,7 @@ pub fn main(init: std.process.Init) !void {
     var change_listener = e.Listener(e.View).init(view_change, &cam_change_data, window, io);
     window.cam.view.change_listener = &change_listener;
 
-    var map_reset_data = .{ &map, &window.cam.view };
+    var map_reset_data = .{ &map, &window.cam.view, &window.cam };
     var map_reset_listener = e.Listener(e.Scene).init(map_reset_press, &map_reset_data, window, io);
     scene.input_listener = &map_reset_listener;
 
@@ -53,10 +53,14 @@ pub fn main(init: std.process.Init) !void {
 
 pub fn map_reset_press(this: *e.Listener(e.Scene), scene: *e.Scene, data: *anyopaque, _: i64) void {
     if (this.is_pressing_key(e.c.GLFW_KEY_R)) {
-        const tuple_data: *struct { *e.gen.Map2, *e.View } = @ptrCast(@alignCast(data));
+        const tuple_data: *struct { *e.gen.Map2, *e.View, *e.Camera } = @ptrCast(@alignCast(data));
         var map = tuple_data.@"0";
         map.gen.seed +%= 1;
         scene.clear();
+
+        var cam = tuple_data.@"2";
+        cam.pull.clearAndFree();
+
         tuple_data.@"1".move(0, 0, 0);
     }
 }
@@ -73,14 +77,23 @@ pub fn view_change(_: *e.Listener(e.View), view: *e.View, data: *anyopaque, _: i
     const allocator = tuple_data.allocator;
     const map = tuple_data.map;
 
-    cam.pull.clearAndFree();
-
     var tiles_in_row: i32 = @ceil((240 / tile_size) * cam.view.zoom);
     tiles_in_row += 1;
     var tiles_in_column: i32 = @ceil((160 / tile_size) * cam.view.zoom);
     tiles_in_column += 1;
     const first_tile_x: i32 = @floor(cam.view.x / tile_size);
     const first_tile_y: i32 = @floor(cam.view.y / tile_size);
+
+    if (cam.pull.count() > @as(u32, @intCast(tiles_in_row * tiles_in_column))) {
+        e.debug.log("{d}", .{cam.pull.count()}, .{"FREED CAM AT OBJS"});
+        cam.pull.clearAndFree();
+    }
+
+    if (scene.objs.count() > @as(u32, @intCast(tiles_in_row * tiles_in_column * 3))) {
+        e.debug.log("{d}", .{scene.objs.count()}, .{"FREED SCENE AT OBJS"});
+        scene.clear();
+        cam.pull.clearAndFree();
+    }
 
     var x: i32 = first_tile_x;
     var y: i32 = first_tile_y;
@@ -108,7 +121,8 @@ pub fn view_change(_: *e.Listener(e.View), view: *e.View, data: *anyopaque, _: i
                 break :blk new_obj;
             };
 
-            cam.pull.put(&obj.model, obj) catch unreachable;
+            if (cam.pull.get(&obj.model) == null)
+                cam.pull.put(&obj.model, obj) catch unreachable;
         }
         x = first_tile_x;
     }
